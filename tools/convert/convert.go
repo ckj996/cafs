@@ -10,15 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/ckj996/cafs/metadata"
-	flags "github.com/jessevdk/go-flags"
 )
-
-var opts struct {
-	Verbose []bool `short:"v" long:"verbose" description:"Show verbose debug information"`
-	From    string `short:"f" long:"from" description:"Source directory to convert from" required:"true"`
-	Out     string `short:"o" long:"output" description:"File to store metadata" required:"true"`
-	Pool    string `short:"p" long:"pool" description:"Content-addressable storage pool"`
-}
 
 func sha256sum(path string) (checksum string) {
 	f, err := os.Open(path)
@@ -34,25 +26,29 @@ func sha256sum(path string) (checksum string) {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func stash(path string) (checksum string) {
-	checksum = sha256sum(path)
-	if opts.Pool == "" {
+func stashTo(pool string) func(path string) string {
+	if pool == "" {
+		return sha256sum
+	}
+	return func(path string) (checksum string) {
+		checksum = sha256sum(path)
+		caspath := filepath.Join(pool, checksum)
+		if _, err := os.Stat(caspath); os.IsNotExist(err) {
+			os.Link(path, filepath.Join(pool, checksum))
+		}
 		return
 	}
-	caspath := filepath.Join(opts.Pool, checksum)
-	if _, err := os.Stat(caspath); os.IsNotExist(err) {
-		os.Link(path, filepath.Join(opts.Pool, checksum))
-	}
-	return
 }
 
 func main() {
-	if _, err := flags.Parse(&opts); err != nil {
+	if len(os.Args) != 4 {
+		fmt.Printf("Usage: %v root meta pool\n", os.Args[0])
 		os.Exit(-1)
 	}
+	root, meta, pool := os.Args[1], os.Args[2], os.Args[3]
 	tree := metadata.Tree{}
-	if err := tree.Build(opts.From, stash); err != nil {
+	if err := tree.Build(root, stashTo(pool)); err != nil {
 		fmt.Println(err)
 	}
-	tree.Save(opts.Out)
+	tree.Save(meta)
 }
