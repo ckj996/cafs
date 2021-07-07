@@ -123,7 +123,10 @@ func (t *Tree) Stat(path string, stat *syscall.Stat_t) error {
 	file.Stat(stat)
 	stat.Nlink = 1
 	stat.Blksize = 4096
-	stat.Blocks = ((stat.Size-1)/stat.Blksize + 1) * (stat.Blksize / 512)
+	stat.Blocks = stat.Size / stat.Blksize
+	if stat.Size%stat.Blksize > 0 {
+		stat.Blocks++
+	}
 	return nil
 }
 
