@@ -7,6 +7,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -14,7 +16,6 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/ckj996/cafs/metadata"
 	"github.com/ckj996/cafs/platform"
-	"github.com/jessevdk/go-flags"
 )
 
 func errno(err error) int {
@@ -28,7 +29,8 @@ func errno(err error) int {
 type Cafs struct {
 	fuse.FileSystemBase
 	metadata.Tree
-	pool string
+	pool   string
+	remote string
 }
 
 // Init is called when the file system is created.
@@ -134,27 +136,26 @@ func (cafs *Cafs) Releasedir(path string, fh uint64) (errc int) {
 */
 
 func main() {
+	var (
+		meta   = flag.String("meta", "", "metadata file")
+		pool   = flag.String("pool", "", "local content pool")
+		remote = flag.String("remote", "", "remote content store")
+	)
 
-	var opts struct {
-		Verbose []bool   `short:"v" long:"verbose" description:"Show verbose debug information"`
-		Mnt     string   `short:"t" long:"target" description:"Metadata file" required:"true"`
-		Meta    string   `short:"s" long:"source" description:"Metadata file" required:"true"`
-		Opts    []string `short:"o" long:"option" description:"FUSE mount options"`
-		Pool    string   `short:"p" long:"pool" description:"Content-addressable storage pool" required:"true"`
-	}
+	flag.Parse()
 
-	if _, err := flags.Parse(&opts); err != nil {
+	if *pool == "" || *meta == "" || len(flag.Args()) == 0 {
+		fmt.Printf("Usage: %v options mountpoint [fuse options]\n\n"+
+			"OPTIONS\n"+
+			"  --meta file   metadata JSON file\n"+
+			"  --pool dir    local content pool\n"+
+			"  --remote url  remote content store\n", os.Args[0])
 		os.Exit(-1)
 	}
+
 	// syscall.Umask(0)
-	cafs := Cafs{}
-	cafs.Restore(opts.Meta)
-	cafs.pool = opts.Pool
-	args := make([]string, 0, len(opts.Opts)*2+1)
-	for _, op := range opts.Opts {
-		args = append(args, "-o", op)
-	}
-	args = append(args, opts.Mnt)
+	cafs := Cafs{pool: *pool, remote: *remote}
+	cafs.Restore(*meta)
 	host := fuse.NewFileSystemHost(&cafs)
-	host.Mount("", args)
+	host.Mount("", flag.Args())
 }
