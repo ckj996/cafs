@@ -7,6 +7,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -135,19 +136,44 @@ func (cafs *Cafs) Releasedir(path string, fh uint64) (errc int) {
 }
 */
 
+const configPath = "/etc/cafs/config.json"
+
+type Config struct {
+	Pool   string `json:"pool"`
+	Remote string `json:"remote"`
+}
+
+func (cfg *Config) Load(file string) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, cfg)
+}
+
 func main() {
 	var (
-		meta   = flag.String("meta", "", "metadata file")
 		pool   = flag.String("pool", "", "local content pool")
 		remote = flag.String("remote", "", "remote content store")
 	)
-
 	flag.Parse()
+	args := flag.Args()
 
-	if *pool == "" || *meta == "" || len(flag.Args()) == 0 {
-		fmt.Printf("Usage: %v options mountpoint [fuse options]\n\n"+
+	if *pool == "" || *remote == "" {
+		cfg := &Config{}
+		if err := cfg.Load(configPath); err == nil {
+			if *pool == "" {
+				pool = &cfg.Pool
+			}
+			if *remote == "" {
+				remote = &cfg.Remote
+			}
+		}
+	}
+
+	if *pool == "" || len(args) < 2 {
+		fmt.Printf("Usage: %v [options] metadata mountpoint [fuse options]\n\n"+
 			"OPTIONS\n"+
-			"  --meta file   metadata JSON file\n"+
 			"  --pool dir    local content pool\n"+
 			"  --remote url  remote content store\n", os.Args[0])
 		os.Exit(-1)
@@ -155,7 +181,7 @@ func main() {
 
 	// syscall.Umask(0)
 	cafs := Cafs{pool: *pool, remote: *remote}
-	cafs.Restore(*meta)
+	cafs.Restore(args[0])
 	host := fuse.NewFileSystemHost(&cafs)
-	host.Mount("", flag.Args())
+	host.Mount("", args[1:])
 }
