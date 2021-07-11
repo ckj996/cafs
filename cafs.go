@@ -7,7 +7,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/billziss-gh/cgofuse/fuse"
+	"github.com/ckj996/cafs/config"
 	"github.com/ckj996/cafs/metadata"
 	"github.com/ckj996/cafs/platform"
 )
@@ -136,21 +136,6 @@ func (cafs *Cafs) Releasedir(path string, fh uint64) (errc int) {
 }
 */
 
-const configPath = "/etc/cafs/config.json"
-
-type Config struct {
-	Pool   string `json:"pool"`
-	Remote string `json:"remote"`
-}
-
-func (cfg *Config) Load(file string) error {
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, cfg)
-}
-
 func main() {
 	var (
 		pool   = flag.String("pool", "", "local content pool")
@@ -159,15 +144,12 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	if *pool == "" || *remote == "" {
-		cfg := &Config{}
-		if err := cfg.Load(configPath); err == nil {
-			if *pool == "" {
-				pool = &cfg.Pool
-			}
-			if *remote == "" {
-				remote = &cfg.Remote
-			}
+	if cfg, err := config.GetDefaultConfig(); err == nil {
+		if *pool == "" {
+			pool = &cfg.Pool
+		}
+		if *remote == "" {
+			remote = &cfg.Remote
 		}
 	}
 

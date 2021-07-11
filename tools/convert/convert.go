@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ckj996/cafs/config"
 	"github.com/ckj996/cafs/metadata"
 )
 
@@ -41,11 +42,19 @@ func stashTo(pool string) func(path string) string {
 }
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Printf("Usage: %v root meta pool\n", os.Args[0])
+	if len(os.Args) < 3 {
+		fmt.Printf("Usage: %v root meta [pool]\n", os.Args[0])
 		os.Exit(-1)
 	}
-	root, meta, pool := os.Args[1], os.Args[2], os.Args[3]
+	root, meta := os.Args[1], os.Args[2]
+	var pool string
+	if len(os.Args) < 4 {
+		if cfg, err := config.GetDefaultConfig(); err == nil {
+			pool = cfg.Pool
+		}
+	} else {
+		pool = os.Args[3]
+	}
 	tree := metadata.Tree{}
 	if err := tree.Build(root, stashTo(pool)); err != nil {
 		fmt.Println(err)
