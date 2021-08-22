@@ -1,4 +1,4 @@
-module github.com/ckj996/cafs
+module github.com/kaijchen/cafs
 
 go 1.16
 

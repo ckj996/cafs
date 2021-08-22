@@ -14,9 +14,9 @@ import (
 	"syscall"
 
 	"github.com/billziss-gh/cgofuse/fuse"
-	"github.com/ckj996/cafs/config"
-	"github.com/ckj996/cafs/metadata"
-	"github.com/ckj996/cafs/platform"
+	"github.com/kaijchen/cafs/config"
+	"github.com/kaijchen/cafs/metadata"
+	"github.com/kaijchen/cafs/platform"
 )
 
 func errno(err error) int {

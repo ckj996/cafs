@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ckj996/cafs/config"
-	"github.com/ckj996/cafs/metadata"
+	"github.com/kaijchen/cafs/config"
+	"github.com/kaijchen/cafs/metadata"
 )
 
 func sha256sum(path string) (checksum string) {
