@@ -9,6 +9,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -61,6 +63,32 @@ func (cafs *Cafs) Open(path string, flags int) (errc int, fh uint64) {
 	return cafs.open(path, flags, 0)
 }
 
+func (cafs *Cafs) get(hash string) error {
+	tmp := filepath.Join(cafs.pool, "tmp_"+hash)
+	if err := cafs.download(hash, tmp); err != nil {
+		return err
+	}
+	object := filepath.Join(cafs.pool, hash)
+	return os.Rename(tmp, object)
+}
+
+func (cafs *Cafs) download(hash, path string) error {
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	resp, err := http.Get(cafs.remote + hash)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
 func (cafs *Cafs) open(path string, flags int, perm uint32) (errc int, fh uint64) {
 	var hash string
 	hash, errc = cafs.GetHash(path)
@@ -70,6 +98,13 @@ func (cafs *Cafs) open(path string, flags int, perm uint32) (errc int, fh uint64
 	}
 	path = filepath.Join(cafs.pool, hash)
 	f, e := syscall.Open(path, flags, perm)
+	if e == syscall.ENOENT {
+		// get object
+		if cafs.get(hash) == nil {
+			// retry
+			f, e = syscall.Open(path, flags, perm)
+		}
+	}
 	if e != nil {
 		return errno(e), ^uint64(0)
 	}
