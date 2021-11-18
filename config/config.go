@@ -5,11 +5,12 @@ import (
 	"os"
 )
 
-const DefaultConfigPath = "/etc/cafs/config.json"
+const DefaultConfigPath = "/etc/merklefs/config.json"
 
 type Config struct {
-	Pool   string `json:"pool"`
-	Remote string `json:"remote"`
+	Pool    string `json:"pool"`
+	Remote  string `json:"remote"`
+	Fetcher string `json:"fetcher"`
 }
 
 func (cfg *Config) Load(file string) error {

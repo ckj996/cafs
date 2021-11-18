@@ -1,3 +1,4 @@
+//go:build darwin || freebsd || netbsd || openbsd || linux
 // +build darwin freebsd netbsd openbsd linux
 
 // Copyright 2021 Kaijie Chen. All rights reserved.
@@ -8,8 +9,8 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,8 +33,9 @@ func errno(err error) int {
 type Cafs struct {
 	fuse.FileSystemBase
 	metadata.Tree
-	pool   string
-	remote string
+	pool    string
+	remote  string
+	fetcher string
 }
 
 // Init is called when the file system is created.
@@ -170,34 +172,42 @@ func (cafs *Cafs) Releasedir(path string, fh uint64) (errc int) {
 	return errno(syscall.Close(int(fh)))
 }
 */
+/*
+type config struct {
+	Pool    string `json:"pool"`
+	Remote  string `json:"remote"`
+	Fetcher string `json:"fetcher"`
+}
+
+func getConfig(file string) (config, error) {
+	cfg := config{}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return cfg, err
+	}
+	err = json.Unmarshal(data, &cfg)
+	return cfg, err
+}
+*/
 
 func main() {
 	var (
-		pool   = flag.String("pool", "", "local content pool")
-		remote = flag.String("remote", "", "remote content store")
+		useFetcher = flag.Bool("fetcher", false, "enable fetcher")
 	)
 	flag.Parse()
 	args := flag.Args()
 
-	if cfg, err := config.GetDefaultConfig(); err == nil {
-		if *pool == "" {
-			pool = &cfg.Pool
-		}
-		if *remote == "" {
-			remote = &cfg.Remote
-		}
-	}
+	cfg, err := config.GetDefaultConfig()
 
-	if *pool == "" || len(args) < 2 {
-		fmt.Printf("Usage: %v [options] metadata mountpoint [fuse options]\n\n"+
-			"OPTIONS\n"+
-			"  --pool dir    local content pool\n"+
-			"  --remote url  remote content store\n", os.Args[0])
-		os.Exit(-1)
+	if err != nil {
+		log.Fatalf("Error: %v", err)
 	}
 
 	// syscall.Umask(0)
-	cafs := Cafs{pool: *pool, remote: *remote}
+	cafs := Cafs{pool: cfg.Pool, remote: cfg.Remote}
+	if *useFetcher {
+		cafs.fetcher = cfg.Fetcher
+	}
 	cafs.Restore(args[0])
 	host := fuse.NewFileSystemHost(&cafs)
 	host.Mount("", args[1:])
