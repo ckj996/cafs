@@ -9,6 +9,7 @@ const DefaultConfigPath = "/etc/merklefs/config.json"
 
 type Config struct {
 	Pool    string `json:"pool"`
+	Zpool   string `json:"zpool"`
 	Remote  string `json:"remote"`
 	Fetcher string `json:"fetcher"`
 }

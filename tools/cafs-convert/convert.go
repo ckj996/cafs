@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/kaijchen/cafs/config"
@@ -27,7 +28,7 @@ func sha256sum(path string) (checksum string) {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func stashTo(pool string) func(path string) string {
+func stashTo(pool string, zpool string) func(path string) string {
 	if pool == "" {
 		return sha256sum
 	}
@@ -36,6 +37,10 @@ func stashTo(pool string) func(path string) string {
 		caspath := filepath.Join(pool, checksum)
 		if _, err := os.Stat(caspath); os.IsNotExist(err) {
 			os.Link(path, filepath.Join(pool, checksum))
+		}
+		zpath := filepath.Join(zpool, checksum+".zst")
+		if _, err := os.Stat(zpath); os.IsNotExist(err) {
+			exec.Command("zstd", "-o", zpath, path).Run()
 		}
 		return
 	}
@@ -47,16 +52,17 @@ func main() {
 		os.Exit(-1)
 	}
 	root, meta := os.Args[1], os.Args[2]
-	var pool string
+	var pool, zpool string
 	if len(os.Args) < 4 {
 		if cfg, err := config.GetDefaultConfig(); err == nil {
 			pool = cfg.Pool
+			zpool = cfg.Zpool
 		}
 	} else {
 		pool = os.Args[3]
 	}
 	tree := metadata.Tree{}
-	if err := tree.Build(root, stashTo(pool)); err != nil {
+	if err := tree.Build(root, stashTo(pool, zpool)); err != nil {
 		fmt.Println(err)
 	}
 	tree.Save(meta)
