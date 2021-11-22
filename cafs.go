@@ -18,6 +18,7 @@ import (
 
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/kaijchen/cafs/config"
+	"github.com/kaijchen/cafs/location"
 	"github.com/kaijchen/cafs/metadata"
 	"github.com/kaijchen/cafs/platform"
 )
@@ -36,6 +37,8 @@ type Cafs struct {
 	pool    string
 	remote  string
 	fetcher string
+	tracker string
+	loc     *location.Loc
 }
 
 // Init is called when the file system is created.
@@ -81,7 +84,17 @@ func (cafs *Cafs) download(hash, path string) error {
 	}
 	defer out.Close()
 
-	resp, err := http.Get(cafs.remote + hash)
+	var url string
+	if cafs.loc == nil {
+		url = cafs.remote + hash
+	} else {
+		tmp, err := cafs.loc.Query(hash)
+		if err != nil {
+			return err
+		}
+		url = tmp
+	}
+	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
@@ -204,7 +217,12 @@ func main() {
 	}
 
 	// syscall.Umask(0)
-	cafs := Cafs{pool: cfg.Pool, remote: cfg.Remote}
+	cafs := Cafs{pool: cfg.Pool, remote: cfg.Remote, tracker: cfg.Tracker}
+	if cfg.Tracker != "" {
+		loc := location.NewLoc(cfg.Tracker)
+		cafs.loc = &loc
+		defer loc.Close()
+	}
 	if *useFetcher {
 		cafs.fetcher = cfg.Fetcher
 	}

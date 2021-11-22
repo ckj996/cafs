@@ -12,6 +12,7 @@ type Config struct {
 	Zpool   string `json:"zpool"`
 	Remote  string `json:"remote"`
 	Fetcher string `json:"fetcher"`
+	Tracker string `json:"tracker"`
 }
 
 func (cfg *Config) Load(file string) error {
