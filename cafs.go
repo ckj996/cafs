@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/kaijchen/cafs/config"
@@ -74,7 +75,11 @@ func (cafs *Cafs) get(hash string) error {
 		return err
 	}
 	object := filepath.Join(cafs.pool, hash)
-	return os.Rename(tmp, object)
+	err := os.Rename(tmp, object)
+	if err == nil {
+		cafs.loc.Report(hash)
+	}
+	return err
 }
 
 func (cafs *Cafs) download(hash, path string) error {
@@ -89,8 +94,11 @@ func (cafs *Cafs) download(hash, path string) error {
 		url = cafs.remote + hash
 	} else {
 		tmp, err := cafs.loc.Query(hash)
-		if err != nil {
-			return err
+		var t time.Duration
+		for err != nil {
+			t += 100
+			time.Sleep(t * time.Millisecond)
+			tmp, err = cafs.loc.Query(hash)
 		}
 		url = tmp
 	}
