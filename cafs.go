@@ -76,7 +76,7 @@ func (cafs *Cafs) get(hash string) error {
 	}
 	object := filepath.Join(cafs.pool, hash)
 	err := os.Rename(tmp, object)
-	if err == nil {
+	if cafs.loc != nil && err == nil {
 		cafs.loc.Report(hash)
 	}
 	return err
@@ -93,14 +93,12 @@ func (cafs *Cafs) download(hash, path string) error {
 	if cafs.loc == nil {
 		url = cafs.remote + hash
 	} else {
-		tmp, err := cafs.loc.Query(hash)
 		var t time.Duration
-		for err != nil {
-			t += 100
+		for url == "" {
 			time.Sleep(t * time.Millisecond)
-			tmp, err = cafs.loc.Query(hash)
+			t += 100
+			url, _ = cafs.loc.Query(hash)
 		}
-		url = tmp
 	}
 	resp, err := http.Get(url)
 	if err != nil {
