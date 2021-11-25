@@ -11,6 +11,7 @@ type Config struct {
 	Pool    string `json:"pool"`
 	Zpool   string `json:"zpool"`
 	Remote  string `json:"remote"`
+	Port    int    `json:"port"`
 	Fetcher string `json:"fetcher"`
 	Tracker string `json:"tracker"`
 }

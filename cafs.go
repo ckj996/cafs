@@ -226,6 +226,9 @@ func main() {
 	cafs := Cafs{pool: cfg.Pool, remote: cfg.Remote, tracker: cfg.Tracker}
 	if cfg.Tracker != "" {
 		loc := location.NewLoc(cfg.Tracker)
+		if cfg.Port > 0 {
+			loc.SetPort(cfg.Port)
+		}
 		cafs.loc = &loc
 		defer loc.Close()
 	}

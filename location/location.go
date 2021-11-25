@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	pb "github.com/kaijchen/tracker/track"
@@ -14,6 +15,7 @@ type Loc struct {
 	client   pb.TrackerClient
 	conn     *grpc.ClientConn
 	hostname string
+	port     string
 	source   map[string]int64
 }
 
@@ -34,6 +36,10 @@ func (loc *Loc) Close() {
 	loc.conn.Close()
 }
 
+func (loc *Loc) SetPort(p int) {
+	loc.port = ":" + strconv.Itoa(p)
+}
+
 func (loc *Loc) Query(key string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -41,7 +47,7 @@ func (loc *Loc) Query(key string) (string, error) {
 	if err != nil || r.GetLocation() == "" {
 		return "", err
 	}
-	url := "http://" + r.GetLocation() + "/" + key
+	url := "http://" + r.GetLocation() + loc.port + "/" + key
 	loc.source[key] = r.GetSource()
 	return url, nil
 }
