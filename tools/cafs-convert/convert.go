@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"github.com/kaijchen/cafs/config"
 	"github.com/kaijchen/cafs/metadata"
@@ -29,10 +30,11 @@ func sha256sum(path string) (checksum string) {
 }
 
 type stasher struct {
-	pool  string
-	zpool string
-	zsize int64
-	zrate float64
+	pool   string
+	zpool  string
+	zsize  int64
+	zrate  float64
+	zlevel int
 }
 
 func (s stasher) stashTo() func(path string) string {
@@ -51,7 +53,13 @@ func (s stasher) stashTo() func(path string) string {
 			}
 			zpath := filepath.Join(s.zpool, checksum)
 			if _, err := os.Stat(zpath); os.IsNotExist(err) {
-				exec.Command("zstd", "-o", zpath, path).Run()
+				var cl string
+				if s.zlevel == 0 {
+					cl = "-3" //default
+				} else {
+					cl = "-" + strconv.Itoa(s.zlevel)
+				}
+				exec.Command("zstd", cl, "-o", zpath, path).Run()
 			}
 			zi, err := os.Stat(zpath)
 			if err != nil {
@@ -79,6 +87,7 @@ func main() {
 			s.zpool = cfg.Zpool
 			s.zsize = cfg.ZSize
 			s.zrate = cfg.ZRate
+			s.zlevel = cfg.ZLevel
 		}
 	} else {
 		s.pool = os.Args[3]

@@ -16,6 +16,7 @@ type Config struct {
 	Tracker string  `json:"tracker"`
 	ZSize   int64   `json:"zsize"`
 	ZRate   float64 `json:"zrate"`
+	ZLevel  int     `json:"zlevel"`
 }
 
 func (cfg *Config) Load(file string) error {
