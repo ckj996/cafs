@@ -47,7 +47,7 @@ func (loc *Loc) Query(key string) (string, error) {
 	if err != nil || r.GetLocation() == "" {
 		return "", err
 	}
-	url := "http://" + r.GetLocation() + loc.port + "/" + key
+	url := "http://" + r.GetLocation() + loc.port + "/"
 	loc.source[key] = r.GetSource()
 	return url, nil
 }

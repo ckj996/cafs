@@ -28,19 +28,39 @@ func sha256sum(path string) (checksum string) {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func stashTo(pool string, zpool string) func(path string) string {
-	if pool == "" {
+type stasher struct {
+	pool  string
+	zpool string
+	zsize int64
+	zrate float64
+}
+
+func (s stasher) stashTo() func(path string) string {
+	if s.pool == "" {
 		return sha256sum
 	}
 	return func(path string) (checksum string) {
 		checksum = sha256sum(path)
-		caspath := filepath.Join(pool, checksum)
+		caspath := filepath.Join(s.pool, checksum)
 		if _, err := os.Stat(caspath); os.IsNotExist(err) {
-			os.Link(path, filepath.Join(pool, checksum))
+			os.Link(path, caspath)
 		}
-		zpath := filepath.Join(zpool, checksum+".zst")
-		if _, err := os.Stat(zpath); os.IsNotExist(err) {
-			exec.Command("zstd", "-o", zpath, path).Run()
+		if fi, err := os.Stat(caspath); err == nil {
+			if fi.Size() < s.zsize {
+				return
+			}
+			zpath := filepath.Join(s.zpool, checksum)
+			if _, err := os.Stat(zpath); os.IsNotExist(err) {
+				exec.Command("zstd", "-o", zpath, path).Run()
+			}
+			zi, err := os.Stat(zpath)
+			if err != nil {
+				return
+			}
+			if float64(zi.Size()) < float64(fi.Size())*s.zrate {
+				os.Remove(caspath)
+				checksum = checksum + ".zst"
+			}
 		}
 		return
 	}
@@ -52,17 +72,19 @@ func main() {
 		os.Exit(-1)
 	}
 	root, meta := os.Args[1], os.Args[2]
-	var pool, zpool string
+	var s stasher
 	if len(os.Args) < 4 {
 		if cfg, err := config.GetDefaultConfig(); err == nil {
-			pool = cfg.Pool
-			zpool = cfg.Zpool
+			s.pool = cfg.Pool
+			s.zpool = cfg.Zpool
+			s.zsize = cfg.ZSize
+			s.zrate = cfg.ZRate
 		}
 	} else {
-		pool = os.Args[3]
+		s.pool = os.Args[3]
 	}
 	tree := metadata.Tree{}
-	if err := tree.Build(root, stashTo(pool, zpool)); err != nil {
+	if err := tree.Build(root, s.stashTo()); err != nil {
 		fmt.Println(err)
 	}
 	tree.Save(meta)

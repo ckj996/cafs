@@ -68,7 +68,13 @@ func (t *Tree) Build(root string, toValue func(path string) string) error {
 			node.Dirents = make(map[string]uint64)
 			node.Dirents["."] = node.Ino
 		} else if info.Mode().IsRegular() {
-			node.Value = toValue(path)
+			hash := toValue(path)
+			if strings.HasSuffix(hash, ".zst") {
+				node.Zstd = true
+				node.Value = hash[:len(hash)-4]
+			} else {
+				node.Value = hash
+			}
 		} else if info.Mode()&fs.ModeSymlink != 0 {
 			node.Value, _ = os.Readlink(path)
 		} else {
@@ -144,7 +150,7 @@ func (t *Tree) GetLink(path string) (lnk string, errc int) {
 	return
 }
 
-func (t *Tree) GetHash(path string) (hash string, errc int) {
+func (t *Tree) GetHash(path string) (hash string, zstd bool, errc int) {
 	file := t.lookup(path)
 	if file == nil {
 		errc = -int(syscall.ENOENT)
@@ -155,6 +161,7 @@ func (t *Tree) GetHash(path string) (hash string, errc int) {
 		return
 	}
 	hash = file.Value
+	zstd = file.Zstd
 	return
 }
 
@@ -163,6 +170,7 @@ type Node struct {
 	Mode    uint32            `json:"mode"`
 	Size    int64             `json:"size"`
 	Value   string            `json:"value,omitempty"`
+	Zstd    bool              `json:"zstd,omitempty"`
 	Dirents map[string]uint64 `json:"dirents,omitempty"`
 }
 

@@ -8,6 +8,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"io"
 	"log"
@@ -22,6 +23,7 @@ import (
 	"github.com/kaijchen/cafs/location"
 	"github.com/kaijchen/cafs/metadata"
 	"github.com/kaijchen/cafs/platform"
+	"github.com/klauspost/compress/zstd"
 )
 
 func errno(err error) int {
@@ -69,9 +71,9 @@ func (cafs *Cafs) Open(path string, flags int) (errc int, fh uint64) {
 	return cafs.open(path, flags, 0)
 }
 
-func (cafs *Cafs) get(hash string) error {
+func (cafs *Cafs) get(hash string, zst bool) error {
 	tmp := filepath.Join(cafs.pool, "tmp_"+hash)
-	if err := cafs.download(hash, tmp); err != nil {
+	if err := cafs.download(hash, tmp, zst); err != nil {
 		return err
 	}
 	object := filepath.Join(cafs.pool, hash)
@@ -82,37 +84,68 @@ func (cafs *Cafs) get(hash string) error {
 	return err
 }
 
-func (cafs *Cafs) download(hash, path string) error {
+func (cafs *Cafs) download(hash, path string, zst bool) error {
 	out, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	var url string
-	if cafs.loc == nil {
-		url = cafs.remote + hash
-	} else {
+	remote := cafs.remote
+	if cafs.loc != nil {
 		var t time.Duration
-		for url == "" {
+		var tmp string
+		for tmp == "" {
 			time.Sleep(t * time.Millisecond)
 			t += 100
-			url, _ = cafs.loc.Query(hash)
+			tmp, _ = cafs.loc.Query(hash)
+		}
+		remote = tmp
+	}
+	var resp *http.Response
+	if zst {
+		url := remote + "zstd/" + hash
+		resp, err = http.Get(url)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != 200 {
+			// retry non zst
+			zst = false
+			resp.Body.Close()
 		}
 	}
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
+	if !zst {
+		url := remote + hash
+		resp, err = http.Get(url)
+		if err != nil {
+			return err
+		}
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return errors.New("HTTP Status is not OK")
+	}
 
-	_, err = io.Copy(out, resp.Body)
+	if zst {
+		var d *zstd.Decoder
+		d, err = zstd.NewReader(resp.Body)
+		if err != nil {
+			return err
+		}
+		defer d.Close()
+
+		_, err = io.Copy(out, d)
+	} else {
+		_, err = io.Copy(out, resp.Body)
+	}
 	return err
 }
 
 func (cafs *Cafs) open(path string, flags int, perm uint32) (errc int, fh uint64) {
 	var hash string
-	hash, errc = cafs.GetHash(path)
+	var zst bool
+	hash, zst, errc = cafs.GetHash(path)
 	if errc != 0 {
 		fh = ^uint64(0)
 		return
@@ -121,7 +154,7 @@ func (cafs *Cafs) open(path string, flags int, perm uint32) (errc int, fh uint64
 	f, e := syscall.Open(path, flags, perm)
 	if e == syscall.ENOENT {
 		// get object
-		if cafs.get(hash) == nil {
+		if cafs.get(hash, zst) == nil {
 			// retry
 			f, e = syscall.Open(path, flags, perm)
 		}

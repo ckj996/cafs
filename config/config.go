@@ -8,12 +8,14 @@ import (
 const DefaultConfigPath = "/etc/merklefs/config.json"
 
 type Config struct {
-	Pool    string `json:"pool"`
-	Zpool   string `json:"zpool"`
-	Remote  string `json:"remote"`
-	Port    int    `json:"port"`
-	Fetcher string `json:"fetcher"`
-	Tracker string `json:"tracker"`
+	Pool    string  `json:"pool"`
+	Zpool   string  `json:"zpool"`
+	Remote  string  `json:"remote"`
+	Port    int     `json:"port"`
+	Fetcher string  `json:"fetcher"`
+	Tracker string  `json:"tracker"`
+	ZSize   int64   `json:"zsize"`
+	ZRate   float64 `json:"zrate"`
 }
 
 func (cfg *Config) Load(file string) error {
