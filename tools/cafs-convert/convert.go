@@ -34,7 +34,7 @@ type stasher struct {
 	zpool  string
 	zsize  int64
 	zrate  float64
-	zlevel int
+	zlevel string
 }
 
 func (s stasher) stashTo() func(path string) string {
@@ -47,30 +47,40 @@ func (s stasher) stashTo() func(path string) string {
 		if _, err := os.Stat(caspath); os.IsNotExist(err) {
 			os.Link(path, caspath)
 		}
-		if fi, err := os.Stat(caspath); err == nil {
-			if fi.Size() < s.zsize {
-				return
-			}
-			zpath := filepath.Join(s.zpool, checksum)
-			if _, err := os.Stat(zpath); os.IsNotExist(err) {
-				var cl string
-				if s.zlevel == 0 {
-					cl = "-3" //default
-				} else {
-					cl = "-" + strconv.Itoa(s.zlevel)
-				}
-				exec.Command("zstd", cl, "-o", zpath, path).Run()
-			}
-			zi, err := os.Stat(zpath)
-			if err != nil {
-				return
-			}
-			if float64(zi.Size()) < float64(fi.Size())*s.zrate {
-				os.Remove(caspath)
-				checksum = checksum + ".zst"
-			}
-		}
 		return
+	}
+}
+
+func (s stasher) zstder() func(n *metadata.Node) {
+	return func(n *metadata.Node) {
+		if len(n.Value) != 64 { // FIXME
+			return
+		}
+		path := filepath.Join(s.pool, n.Value)
+		zpath := filepath.Join(s.zpool, n.Value)
+		if _, err := os.Stat(zpath); err == nil {
+			os.Remove(path)
+			n.Zstd = true
+			return
+		}
+
+		fi, err := os.Stat(path)
+		if err != nil || fi.Size() < s.zsize {
+			return
+		}
+
+		exec.Command("zstd", s.zlevel, "-o", zpath, path).Run()
+		zi, err := os.Stat(zpath)
+		if err != nil {
+			return
+		}
+
+		if float64(zi.Size()) < float64(fi.Size())*s.zrate {
+			os.Remove(path)
+			n.Zstd = true
+		} else {
+			os.Remove(zpath)
+		}
 	}
 }
 
@@ -87,7 +97,11 @@ func main() {
 			s.zpool = cfg.Zpool
 			s.zsize = cfg.ZSize
 			s.zrate = cfg.ZRate
-			s.zlevel = cfg.ZLevel
+			if cfg.ZLevel == 0 {
+				s.zlevel = "-3"
+			} else {
+				s.zlevel = "-" + strconv.Itoa(cfg.ZLevel)
+			}
 		}
 	} else {
 		s.pool = os.Args[3]
@@ -96,5 +110,6 @@ func main() {
 	if err := tree.Build(root, s.stashTo()); err != nil {
 		fmt.Println(err)
 	}
+	tree.Walk(s.zstder())
 	tree.Save(meta)
 }

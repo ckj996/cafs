@@ -68,13 +68,7 @@ func (t *Tree) Build(root string, toValue func(path string) string) error {
 			node.Dirents = make(map[string]uint64)
 			node.Dirents["."] = node.Ino
 		} else if info.Mode().IsRegular() {
-			hash := toValue(path)
-			if strings.HasSuffix(hash, ".zst") {
-				node.Zstd = true
-				node.Value = hash[:len(hash)-4]
-			} else {
-				node.Value = hash
-			}
+			node.Value = toValue(path)
 		} else if info.Mode()&fs.ModeSymlink != 0 {
 			node.Value, _ = os.Readlink(path)
 		} else {
@@ -92,6 +86,12 @@ func (t *Tree) Build(root string, toValue func(path string) string) error {
 		}
 		return nil
 	})
+}
+
+func (t *Tree) Walk(op func(n *Node)) {
+	for i := range t.nodes {
+		op(&t.nodes[i])
+	}
 }
 
 func (t *Tree) lookup(path string) *Node {
