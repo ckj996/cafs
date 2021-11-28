@@ -93,11 +93,9 @@ func (cafs *Cafs) download(hash, path string, zst bool) error {
 
 	remote := cafs.remote
 	if cafs.loc != nil {
-		var t time.Duration
 		var tmp string
 		for tmp == "" {
-			time.Sleep(t * time.Millisecond)
-			t += 100
+			time.Sleep(100 * time.Millisecond)
 			tmp, _ = cafs.loc.Query(hash)
 		}
 		remote = tmp
