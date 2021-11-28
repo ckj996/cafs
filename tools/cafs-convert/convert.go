@@ -32,6 +32,7 @@ func sha256sum(path string) (checksum string) {
 type stasher struct {
 	pool   string
 	zpool  string
+	tpool  string
 	zsize  int64
 	zrate  float64
 	zlevel string
@@ -44,9 +45,9 @@ func (s stasher) stashTo() func(path string) string {
 	}
 	return func(path string) (checksum string) {
 		checksum = sha256sum(path)
-		caspath := filepath.Join(s.pool, checksum)
-		if _, err := os.Stat(caspath); os.IsNotExist(err) {
-			os.Link(path, caspath)
+		tpath := filepath.Join(s.tpool, checksum)
+		if _, err := os.Stat(tpath); os.IsNotExist(err) {
+			os.Link(path, tpath)
 		}
 		return
 	}
@@ -59,27 +60,29 @@ func (s stasher) zstder() func(n *metadata.Node) {
 		}
 		path := filepath.Join(s.pool, n.Value)
 		zpath := filepath.Join(s.zpool, n.Value)
+		tpath := filepath.Join(s.tpool, n.Value)
 		if _, err := os.Stat(zpath); err == nil {
-			os.Remove(path)
 			n.Zstd = true
 			return
 		}
 
-		fi, err := os.Stat(path)
+		fi, err := os.Stat(tpath)
 		if err != nil || fi.Size() < s.zsize {
+			os.Link(tpath, path)
 			return
 		}
 
 		exec.Command("zstd", s.zlevel, "-o", zpath, path).Run()
 		zi, err := os.Stat(zpath)
 		if err != nil {
+			os.Link(tpath, path)
 			return
 		}
 
 		if float64(zi.Size()) < float64(fi.Size())*s.zrate {
-			os.Remove(path)
 			n.Zstd = true
 		} else {
+			os.Link(tpath, path)
 			os.Remove(zpath)
 		}
 	}
@@ -96,6 +99,7 @@ func main() {
 		if cfg, err := config.GetDefaultConfig(); err == nil {
 			s.pool = cfg.Pool
 			s.zpool = cfg.Zpool
+			s.tpool = cfg.Tpool
 			s.zsize = cfg.ZSize
 			s.zrate = cfg.ZRate
 			if cfg.ZLevel == 0 {
@@ -108,13 +112,18 @@ func main() {
 	} else {
 		s.pool = os.Args[3]
 	}
+	if s.tpool == "" {
+		s.tpool = "/tmp/merkling"
+	}
+	os.MkdirAll(s.tpool, 0755)
 	tree := metadata.Tree{}
 	if err := tree.Build(root, s.stashTo()); err != nil {
 		fmt.Println(err)
 	}
 	if s.bsize > 0 {
-		tree.Bundle(s.bsize, s.pool)
+		tree.Bundle(s.bsize, s.tpool)
 	}
 	tree.Walk(s.zstder())
+	os.RemoveAll(s.tpool)
 	tree.Save(meta)
 }
