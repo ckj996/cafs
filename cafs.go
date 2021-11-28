@@ -179,7 +179,8 @@ func (cafs *Cafs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) 
 
 // Read reads data from a file.
 func (cafs *Cafs) Read(path string, buff []byte, offset int64, fh uint64) (n int) {
-	n, e := syscall.Pread(int(fh), buff, offset)
+	off := cafs.GetOff(path)
+	n, e := syscall.Pread(int(fh), buff, offset+off)
 	if e != nil {
 		return errno(e)
 	}

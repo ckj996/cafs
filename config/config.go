@@ -17,6 +17,7 @@ type Config struct {
 	ZSize   int64   `json:"zsize"`
 	ZRate   float64 `json:"zrate"`
 	ZLevel  int     `json:"zlevel"`
+	BSize   int64   `json:"bsize"`
 }
 
 func (cfg *Config) Load(file string) error {

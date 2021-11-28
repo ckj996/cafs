@@ -35,6 +35,7 @@ type stasher struct {
 	zsize  int64
 	zrate  float64
 	zlevel string
+	bsize  int64
 }
 
 func (s stasher) stashTo() func(path string) string {
@@ -102,6 +103,7 @@ func main() {
 			} else {
 				s.zlevel = "-" + strconv.Itoa(cfg.ZLevel)
 			}
+			s.bsize = cfg.BSize
 		}
 	} else {
 		s.pool = os.Args[3]
@@ -109,6 +111,9 @@ func main() {
 	tree := metadata.Tree{}
 	if err := tree.Build(root, s.stashTo()); err != nil {
 		fmt.Println(err)
+	}
+	if s.bsize > 0 {
+		tree.Bundle(s.bsize, s.pool)
 	}
 	tree.Walk(s.zstder())
 	tree.Save(meta)

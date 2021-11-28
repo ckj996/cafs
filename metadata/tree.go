@@ -1,12 +1,16 @@
 package metadata
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 )
@@ -94,6 +98,89 @@ func (t *Tree) Walk(op func(n *Node)) {
 	}
 }
 
+type sino struct {
+	size int64
+	ino  uint64
+}
+
+type sinos []sino
+
+func (s sinos) Len() int { return len(s) }
+func (s sinos) Less(i, j int) bool {
+	return s[i].size == s[j].size && s[i].ino < s[j].ino || s[i].size < s[j].size
+}
+func (s sinos) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+func sha256sum(path string) (checksum string) {
+	f, err := os.Open(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		log.Fatal(err)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (t *Tree) Bundle(bsize int64, pool string) {
+	for i := range t.nodes {
+		n := &t.nodes[i]
+		if len(n.Dirents) == 0 {
+			continue
+		}
+		var files sinos
+		for _, ino := range n.Dirents {
+			ino -= 1 // NOTE: t.nodes[0].Ino == 1
+			n := &t.nodes[ino]
+			if len(n.Value) == 64 && n.Size < bsize {
+				files = append(files, sino{size: t.nodes[ino].Size, ino: ino})
+			}
+		}
+		if len(files) < 2 {
+			continue
+		}
+		sort.Sort(files)
+		var pending []uint64
+		var off int64
+		var tmp *os.File
+		tpath := filepath.Join(pool, "_bundle")
+		for _, f := range files {
+			fi := &t.nodes[f.ino]
+			if off == 0 {
+				tmp, _ = os.Create(tpath)
+			}
+			fp, _ := os.Open(filepath.Join(pool, fi.Value))
+			io.Copy(tmp, fp)
+			fp.Close()
+			fi.Off = off
+			pending = append(pending, f.ino)
+			off = ((off+fi.Size-1)/4096 + 1) * 4096
+			tmp.Seek(off, 0)
+			if off >= bsize {
+				tmp.Close()
+				hash := sha256sum(tpath)
+				os.Rename(tpath, filepath.Join(pool, hash))
+				for _, ino := range pending {
+					t.nodes[ino].Value = hash
+				}
+				off = 0
+				pending = pending[:0]
+			}
+		}
+		if off > 0 {
+			tmp.Close()
+			hash := sha256sum(tpath)
+			os.Rename(tpath, filepath.Join(pool, hash))
+			for _, ino := range pending {
+				t.nodes[ino].Value = hash
+			}
+		}
+	}
+}
+
 func (t *Tree) lookup(path string) *Node {
 	path = filepath.Clean(path)
 	i := 0
@@ -165,10 +252,19 @@ func (t *Tree) GetHash(path string) (hash string, zstd bool, errc int) {
 	return
 }
 
+func (t *Tree) GetOff(path string) int64 {
+	file := t.lookup(path)
+	if file == nil {
+		return 0
+	}
+	return file.Off
+}
+
 type Node struct {
 	Ino     uint64            `json:"ino"`
 	Mode    uint32            `json:"mode"`
 	Size    int64             `json:"size"`
+	Off     int64             `json:"off,omitempty"`
 	Value   string            `json:"value,omitempty"`
 	Zstd    bool              `json:"zstd,omitempty"`
 	Dirents map[string]uint64 `json:"dirents,omitempty"`
