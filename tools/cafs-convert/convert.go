@@ -72,7 +72,7 @@ func (s stasher) zstder() func(n *metadata.Node) {
 			return
 		}
 
-		exec.Command("zstd", s.zlevel, "-o", zpath, path).Run()
+		exec.Command("zstd", s.zlevel, "-o", zpath, tpath).Run()
 		zi, err := os.Stat(zpath)
 		if err != nil {
 			os.Link(tpath, path)
