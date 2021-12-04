@@ -19,6 +19,7 @@ type Config struct {
 	ZRate   float64 `json:"zrate"`
 	ZLevel  int     `json:"zlevel"`
 	BSize   int64   `json:"bsize"`
+	BRefs   string  `json:"brefs"`
 	ASize   int64   `json:"asize"`
 }
 

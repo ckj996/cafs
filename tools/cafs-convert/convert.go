@@ -37,6 +37,7 @@ type stasher struct {
 	zrate  float64
 	zlevel string
 	bsize  int64
+	brefs  string
 	asize  int64
 }
 
@@ -109,6 +110,7 @@ func main() {
 				s.zlevel = "-" + strconv.Itoa(cfg.ZLevel)
 			}
 			s.bsize = cfg.BSize
+			s.brefs = cfg.BRefs
 			s.asize = cfg.ASize
 		}
 	} else {
@@ -123,7 +125,7 @@ func main() {
 		fmt.Println(err)
 	}
 	if s.bsize > 0 {
-		tree.Bundle(s.bsize, s.asize, s.tpool)
+		tree.Bundle(s.bsize, s.asize, s.tpool, s.brefs)
 	}
 	tree.Walk(s.zstder())
 	os.RemoveAll(s.tpool)

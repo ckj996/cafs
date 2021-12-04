@@ -125,7 +125,36 @@ func sha256sum(path string) (checksum string) {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (t *Tree) Bundle(bsize int64, asize int64, pool string) {
+type Bref struct {
+	Hash string `json:"hash"`
+	Off  int64  `json:"off"`
+}
+
+func (b Bref) Dump() ([]byte, error) {
+	return json.Marshal(b)
+}
+
+func (b *Bref) Load(data []byte) error {
+	return json.Unmarshal(data, b)
+}
+
+func (b Bref) Save(filename string) error {
+	data, err := b.Dump()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename, data, os.FileMode(0644))
+}
+
+func (b Bref) Restore(filename string) error {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	return b.Load(data)
+}
+
+func (t *Tree) Bundle(bsize int64, asize int64, pool string, brefs string) {
 	for i := range t.nodes {
 		n := &t.nodes[i]
 		if len(n.Dirents) == 0 {
@@ -139,7 +168,30 @@ func (t *Tree) Bundle(bsize int64, asize int64, pool string) {
 				files = append(files, sino{size: t.nodes[ino].Size, ino: ino})
 			}
 		}
+		// filter files
+		if brefs != "" {
+			j := 0
+			ref := Bref{}
+			for _, f := range files {
+				fi := &t.nodes[f.ino]
+				rpath := filepath.Join(brefs, fi.Value)
+				if _, err := os.Stat(rpath); err == nil {
+					ref.Restore(rpath)
+					fi.Value = ref.Hash
+					fi.Off = ref.Off
+				} else {
+					files[j] = f
+					j++
+				}
+			}
+			files = files[:j]
+		}
 		if len(files) < 2 {
+			if brefs != "" && len(files) == 1 {
+				fi := &t.nodes[files[0].ino]
+				ref := Bref{Hash: fi.Value, Off: 0}
+				ref.Save(filepath.Join(brefs, ref.Hash))
+			}
 			continue
 		}
 		sort.Sort(files)
@@ -167,6 +219,8 @@ func (t *Tree) Bundle(bsize int64, asize int64, pool string) {
 				hash := sha256sum(tpath)
 				os.Rename(tpath, filepath.Join(pool, hash))
 				for _, ino := range pending {
+					ref := Bref{Hash: hash, Off: t.nodes[ino].Off}
+					ref.Save(filepath.Join(brefs, t.nodes[ino].Value))
 					t.nodes[ino].Value = hash
 				}
 				off = 0
