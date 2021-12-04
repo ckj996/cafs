@@ -125,7 +125,7 @@ func sha256sum(path string) (checksum string) {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (t *Tree) Bundle(bsize int64, pool string) {
+func (t *Tree) Bundle(bsize int64, asize int64, pool string) {
 	for i := range t.nodes {
 		n := &t.nodes[i]
 		if len(n.Dirents) == 0 {
@@ -157,8 +157,11 @@ func (t *Tree) Bundle(bsize int64, pool string) {
 			fp.Close()
 			fi.Off = off
 			pending = append(pending, f.ino)
-			off = ((off+fi.Size-1)/4096 + 1) * 4096
-			tmp.Seek(off, 0)
+			off += fi.Size
+			if asize > 0 {
+				off = ((off-1)/asize + 1) * asize
+				tmp.Seek(off, 0)
+			}
 			if off >= bsize {
 				tmp.Close()
 				hash := sha256sum(tpath)
