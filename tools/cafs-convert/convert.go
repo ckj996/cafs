@@ -57,12 +57,12 @@ func (s stasher) stashTo() func(path string) string {
 
 func (s stasher) zstder() func(n *metadata.Node) {
 	return func(n *metadata.Node) {
-		if len(n.Value) != 64 { // FIXME
+		if !n.IsReg() {
 			return
 		}
-		path := filepath.Join(s.pool, n.Value)
-		zpath := filepath.Join(s.zpool, n.Value)
-		tpath := filepath.Join(s.tpool, n.Value)
+		path := filepath.Join(s.pool, n.Hash)
+		zpath := filepath.Join(s.zpool, n.Hash)
+		tpath := filepath.Join(s.tpool, n.Hash)
 		if _, err := os.Stat(zpath); err == nil {
 			n.Zstd = true
 			return

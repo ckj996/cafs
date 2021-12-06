@@ -72,9 +72,9 @@ func (t *Tree) Build(root string, toValue func(path string) string) error {
 			node.Dirents = make(map[string]uint64)
 			node.Dirents["."] = node.Ino
 		} else if info.Mode().IsRegular() {
-			node.Value = toValue(path)
+			node.Hash = toValue(path)
 		} else if info.Mode()&fs.ModeSymlink != 0 {
-			node.Value, _ = os.Readlink(path)
+			node.Link, _ = os.Readlink(path)
 		} else {
 			log.Printf("[WARN] %q: unexpected file type", path)
 		}
@@ -146,7 +146,7 @@ func (b Bref) Save(filename string) error {
 	return os.WriteFile(filename, data, os.FileMode(0644))
 }
 
-func (b Bref) Restore(filename string) error {
+func (b *Bref) Restore(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
@@ -164,35 +164,9 @@ func (t *Tree) Bundle(bsize int64, asize int64, pool string, brefs string) {
 		for _, ino := range n.Dirents {
 			ino -= 1 // NOTE: t.nodes[0].Ino == 1
 			n := &t.nodes[ino]
-			if len(n.Value) == 64 && n.Size < bsize {
+			if n.IsReg() && n.Size < bsize {
 				files = append(files, sino{size: t.nodes[ino].Size, ino: ino})
 			}
-		}
-		// filter files
-		if brefs != "" {
-			j := 0
-			ref := Bref{}
-			for _, f := range files {
-				fi := &t.nodes[f.ino]
-				rpath := filepath.Join(brefs, fi.Value)
-				if _, err := os.Stat(rpath); err == nil {
-					ref.Restore(rpath)
-					fi.Value = ref.Hash
-					fi.Off = ref.Off
-				} else {
-					files[j] = f
-					j++
-				}
-			}
-			files = files[:j]
-		}
-		if len(files) < 2 {
-			if brefs != "" && len(files) == 1 {
-				fi := &t.nodes[files[0].ino]
-				ref := Bref{Hash: fi.Value, Off: 0}
-				ref.Save(filepath.Join(brefs, ref.Hash))
-			}
-			continue
 		}
 		sort.Sort(files)
 		var pending []uint64
@@ -201,10 +175,20 @@ func (t *Tree) Bundle(bsize int64, asize int64, pool string, brefs string) {
 		tpath := filepath.Join(pool, "_bundle")
 		for _, f := range files {
 			fi := &t.nodes[f.ino]
+			if brefs != "" {
+				rpath := filepath.Join(brefs, fi.Hash)
+				if _, err := os.Stat(rpath); err == nil {
+					pending = append(pending, f.ino)
+					continue
+				} else {
+					ref := Bref{Hash: "dummy"}
+					ref.Save(rpath) // dummy value
+				}
+			}
 			if off == 0 {
 				tmp, _ = os.Create(tpath)
 			}
-			fp, _ := os.Open(filepath.Join(pool, fi.Value))
+			fp, _ := os.Open(filepath.Join(pool, fi.Hash))
 			io.Copy(tmp, fp)
 			fp.Close()
 			fi.Off = off
@@ -219,9 +203,19 @@ func (t *Tree) Bundle(bsize int64, asize int64, pool string, brefs string) {
 				hash := sha256sum(tpath)
 				os.Rename(tpath, filepath.Join(pool, hash))
 				for _, ino := range pending {
-					ref := Bref{Hash: hash, Off: t.nodes[ino].Off}
-					ref.Save(filepath.Join(brefs, t.nodes[ino].Value))
-					t.nodes[ino].Value = hash
+					if brefs == "" {
+						t.nodes[ino].Hash = hash
+					} else {
+						ref := Bref{}
+						rpath := filepath.Join(brefs, t.nodes[ino].Hash)
+						ref.Restore(rpath)
+						if ref.Hash == "dummy" {
+							ref = Bref{Hash: hash, Off: t.nodes[ino].Off}
+							ref.Save(rpath)
+						}
+						t.nodes[ino].Hash = ref.Hash
+						t.nodes[ino].Off = ref.Off
+					}
 				}
 				off = 0
 				pending = pending[:0]
@@ -232,7 +226,19 @@ func (t *Tree) Bundle(bsize int64, asize int64, pool string, brefs string) {
 			hash := sha256sum(tpath)
 			os.Rename(tpath, filepath.Join(pool, hash))
 			for _, ino := range pending {
-				t.nodes[ino].Value = hash
+				if brefs == "" {
+					t.nodes[ino].Hash = hash
+				} else {
+					ref := Bref{}
+					rpath := filepath.Join(brefs, t.nodes[ino].Hash)
+					ref.Restore(rpath)
+					if ref.Hash == "dummy" {
+						ref = Bref{Hash: hash, Off: t.nodes[ino].Off}
+						ref.Save(rpath)
+					}
+					t.nodes[ino].Hash = ref.Hash
+					t.nodes[ino].Off = ref.Off
+				}
 			}
 		}
 	}
@@ -290,7 +296,7 @@ func (t *Tree) GetLink(path string) (lnk string, errc int) {
 		errc = -int(syscall.EINVAL)
 		return
 	}
-	lnk = file.Value
+	lnk = file.Link
 	return
 }
 
@@ -304,7 +310,7 @@ func (t *Tree) GetHash(path string) (hash string, zstd bool, errc int) {
 		errc = -int(syscall.EINVAL)
 		return
 	}
-	hash = file.Value
+	hash = file.Hash
 	zstd = file.Zstd
 	return
 }
@@ -322,21 +328,22 @@ type Node struct {
 	Mode    uint32            `json:"mode"`
 	Size    int64             `json:"size"`
 	Off     int64             `json:"off,omitempty"`
-	Value   string            `json:"value,omitempty"`
+	Hash    string            `json:"hash,omitempty"`
+	Link    string            `json:"link,omitempty"`
 	Zstd    bool              `json:"zstd,omitempty"`
 	Dirents map[string]uint64 `json:"dirents,omitempty"`
 }
 
 func (n *Node) IsDir() bool {
-	return n.Mode&syscall.S_IFDIR != 0
+	return len(n.Dirents) > 0
 }
 
 func (n *Node) IsLnk() bool {
-	return n.Mode&syscall.S_IFLNK != 0
+	return n.Link != ""
 }
 
 func (n *Node) IsReg() bool {
-	return n.Mode&syscall.S_IFREG != 0
+	return n.Hash != ""
 }
 
 func (n *Node) Stat(stat *syscall.Stat_t) {
